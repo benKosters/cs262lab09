@@ -1,0 +1,13 @@
+{
+  "name": "cs262lab09",
+  "version": "1.0.0",
+  "description": "This is a sample service repo that is for practice creating a web app. This app is hosted on Azure.",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

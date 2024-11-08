@@ -1,121 +1,121 @@
-/* eslint-disable no-template-curly-in-string */
-/* eslint-disable no-console */
-/* eslint-disable no-use-before-define */
-/**
- * This module implements a REST-inspired webservice for the Monopoly DB.
- * The database is hosted on ElephantSQL.
- *
- * Currently, the service supports the player table only.
- *
- * To guard against SQL injection attacks, this code uses pg-promise's built-in
- * variable escaping. This prevents a client from issuing this URL:
- *     https://cs262-webservice.azurewebsites.net//players/1%3BDELETE%20FROM%20PlayerGame%3BDELETE%20FROM%20Player
- * which would delete records in the PlayerGame and then the Player tables.
- * In particular, we don't use JS template strings because it doesn't filter
- * client-supplied values properly.
- * TODO: Consider using Prepared Statements.
- *      https://vitaly-t.github.io/pg-promise/PreparedStatement.html
- *
- * This service assumes that the database connection strings and the server mode are
- * set in environment variables. See the DB_* variables used by pg-promise. And
- * setting NODE_ENV to production will cause ExpressJS to serve up uninformative
- * server error responses for all errors.
- *
- * @author: kvlinden
- * @date: Summer, 2020
- */
-
-// Set up the database connection.
-
-const pgp = require('pg-promise')();
-
-const db = pgp({
-    host: process.env.DB_SERVER,
-    port: process.env.DB_PORT,
-    database: process.env.DB_DATABASE,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-});
-
-// Configure the server and its routes.
-
 const express = require('express');
+const cors = require('cors');
+const { Pool } = require('pg');
+const dotenv = require('dotenv');
+
+dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
-const router = express.Router();
-router.use(express.json());
+const PORT = process.env.PORT || 3000;
 
-router.get('/', readHelloMessage);
-router.get('/players', readPlayers);
-router.get('/players/:id', readPlayer);
-router.put('/players/:id', updatePlayer);
-router.post('/players', createPlayer);
-router.delete('/players/:id', deletePlayer);
+// Configure PostgreSQL connection pool
+const pool = new Pool({
+    user: process.env.DB_USER,
+    host: process.env.DB_HOST,
+    database: process.env.DB_NAME,
+    password: process.env.DB_PASSWORD,
+    port: process.env.DB_PORT,
+    ssl: { rejectUnauthorized: false }
+});
 
-app.use(router);
-app.listen(port, () => console.log(`Listening on port ${port}`));
+app.use(express.json());
+app.use(cors({
+    origin: '*', // Adjust this to your needs in production
+}));
 
-// Implement the CRUD operations.
 
-function returnDataOr404(res, data) {
-    if (data == null) {
-        res.sendStatus(404);
-    } else {
-        res.send(data);
+const registerRoute = (method, route, handler) => {
+    app[method](route, handler);
+};
+
+
+// Endpoint to check if a user exists
+const readHelloMessage = (req, res) => {
+    res.send('Hello from CS262 Team D!');
+};
+
+
+const readPlayers = async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM player');
+        res.json(result.rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error retrieving players');
     }
-}
+};
 
-function readHelloMessage(req, res) {
-    res.send('Hello, CS 262 Monopoly service!');
-}
+const readPlayer = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('SELECT * FROM player WHERE id = $1', [id]);
+        if (result.rows.length > 0) {
+            res.json(result.rows[0]);
+        } else {
+            res.status(404).send('Player not found');
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error retrieving player');
+    }
+};
 
-function readPlayers(req, res, next) {
-    db.many('SELECT * FROM Player')
-        .then((data) => {
-            res.send(data);
-        })
-        .catch((err) => {
-            next(err);
-        });
-}
+const updatePlayer = async (req, res) => {
+    const { id } = req.params;
+    const { name, score } = req.body;
+    try {
+        const result = await pool.query(
+            'UPDATE player SET name = $1, score = $2 WHERE id = $3 RETURNING *',
+            [name, score, id]
+        );
+        if (result.rows.length > 0) {
+            res.json(result.rows[0]);
+        } else {
+            res.status(404).send('Player not found');
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error updating player');
+    }
+};
 
-function readPlayer(req, res, next) {
-    db.oneOrNone('SELECT * FROM Player WHERE id=${id}', req.params)
-        .then((data) => {
-            returnDataOr404(res, data);
-        })
-        .catch((err) => {
-            next(err);
-        });
-}
+const createPlayer = async (req, res) => {
+    const { name, score } = req.body;
+    try {
+        const result = await pool.query(
+            'INSERT INTO player (name, score) VALUES ($1, $2) RETURNING *',
+            [name, score]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error creating player');
+    }
+};
 
-function updatePlayer(req, res, next) {
-    db.oneOrNone('UPDATE Player SET email=${body.email}, name=${body.name} WHERE id=${params.id} RETURNING id', req)
-        .then((data) => {
-            returnDataOr404(res, data);
-        })
-        .catch((err) => {
-            next(err);
-        });
-}
+const deletePlayer = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('DELETE FROM player WHERE id = $1 RETURNING *', [id]);
+        if (result.rows.length > 0) {
+            res.status(204).send();
+        } else {
+            res.status(404).send('Player not found');
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Error deleting player');
+    }
+};
 
-function createPlayer(req, res, next) {
-    db.one('INSERT INTO Player(email, name) VALUES (${email}, ${name}) RETURNING id', req.body)
-        .then((data) => {
-            res.send(data);
-        })
-        .catch((err) => {
-            next(err);
-        });
-}
+registerRoute('get', '/', readHelloMessage);
+registerRoute('get', '/players', readPlayers);
+registerRoute('get', '/players/:id', readPlayer);
+registerRoute('put', '/players/:id', updatePlayer);
+registerRoute('post', '/players', createPlayer);
+registerRoute('delete', '/players/:id', deletePlayer);
 
-function deletePlayer(req, res, next) {
-    db.oneOrNone('DELETE FROM Player WHERE id=${id} RETURNING id', req.params)
-        .then((data) => {
-            returnDataOr404(res, data);
-        })
-        .catch((err) => {
-            next(err);
-        });
-}
+
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
