@@ -1,3 +1,4 @@
+
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
@@ -23,19 +24,13 @@ app.use(cors({
     origin: '*', // Adjust this to your needs in production
 }));
 
-
-const registerRoute = (method, route, handler) => {
-    app[method](route, handler);
-};
-
-
 // Endpoint to check if a user exists
-const readHelloMessage = (req, res) => {
-    res.send('Hello from CS262 Team D!');
-};
+app.get('/', (req, res) => {
+    res.send('Server is running!');
+});
 
-
-const readPlayers = async (req, res) => {
+// Route to fetch all players
+app.get('/players', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM player');
         res.json(result.rows);
@@ -43,9 +38,10 @@ const readPlayers = async (req, res) => {
         console.error(error);
         res.status(500).send('Error retrieving players');
     }
-};
+});
 
-const readPlayer = async (req, res) => {
+// Route to fetch a specific player by ID
+app.get('/players/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const result = await pool.query('SELECT * FROM player WHERE id = $1', [id]);
@@ -58,15 +54,16 @@ const readPlayer = async (req, res) => {
         console.error(error);
         res.status(500).send('Error retrieving player');
     }
-};
+});
 
-const updatePlayer = async (req, res) => {
+// Route to update a player by ID
+app.put('/players/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, score } = req.body;
+    const { name, position } = req.body;
     try {
         const result = await pool.query(
-            'UPDATE player SET name = $1, score = $2 WHERE id = $3 RETURNING *',
-            [name, score, id]
+            'UPDATE player SET name = $1, position = $2 WHERE id = $3 RETURNING *',
+            [name, position, id]
         );
         if (result.rows.length > 0) {
             res.json(result.rows[0]);
@@ -77,28 +74,30 @@ const updatePlayer = async (req, res) => {
         console.error(error);
         res.status(500).send('Error updating player');
     }
-};
+});
 
-const createPlayer = async (req, res) => {
-    const { name, score } = req.body;
+// Route to create a new player
+app.post('/players', async (req, res) => {
+    const { name, position } = req.body;
     try {
         const result = await pool.query(
-            'INSERT INTO player (name, score) VALUES ($1, $2) RETURNING *',
-            [name, score]
+            'INSERT INTO player (name, position) VALUES ($1, $2) RETURNING *',
+            [name, position]
         );
         res.status(201).json(result.rows[0]);
     } catch (error) {
         console.error(error);
         res.status(500).send('Error creating player');
     }
-};
+});
 
-const deletePlayer = async (req, res) => {
+// Route to delete a player by ID
+app.delete('/players/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const result = await pool.query('DELETE FROM player WHERE id = $1 RETURNING *', [id]);
         if (result.rows.length > 0) {
-            res.status(204).send();
+            res.json({ message: 'Player deleted successfully' });
         } else {
             res.status(404).send('Player not found');
         }
@@ -106,16 +105,8 @@ const deletePlayer = async (req, res) => {
         console.error(error);
         res.status(500).send('Error deleting player');
     }
-};
+});
 
-registerRoute('get', '/', readHelloMessage);
-registerRoute('get', '/players', readPlayers);
-registerRoute('get', '/players/:id', readPlayer);
-registerRoute('put', '/players/:id', updatePlayer);
-registerRoute('post', '/players', createPlayer);
-registerRoute('delete', '/players/:id', deletePlayer);
-
-
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server is running on port ${PORT}`);
 });
